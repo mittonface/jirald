@@ -201,55 +201,100 @@ Respond with ONLY a JSON object:
     async def handle_pr_comment(self, payload: Dict[str, Any]):
         """Handle PR comment events"""
         try:
+            logger.info("=== Processing PR comment ===")
+            
             comment = payload.get('comment', {})
             comment_body = comment.get('body', '')
+            comment_author = comment.get('user', {}).get('login', 'unknown')
+            
+            logger.info(f"Comment author: {comment_author}")
+            logger.info(f"Comment body: {comment_body}")
             
             # Check if bot is mentioned
             match = re.search(BOT_MENTION_PATTERN, comment_body, re.IGNORECASE)
             if not match:
+                logger.info("Bot not mentioned in comment - skipping")
                 return
             
             user_request = match.group(1).strip()
             if not user_request:
+                logger.info("Empty user request after bot mention - skipping")
                 return
+            
+            logger.info(f"User request: {user_request}")
             
             # Get PR data
             pr_data = payload.get('pull_request', {})
             if not pr_data:
+                logger.error("No pull_request data in payload")
                 return
+            
+            pr_number = pr_data.get('number', 'unknown')
+            logger.info(f"PR number: {pr_number}")
             
             # Get installation token
             installation_id = payload.get('installation', {}).get('id')
             if not installation_id:
+                logger.error("No installation ID in payload")
                 return
             
-            token = self._get_installation_token(installation_id)
+            logger.info(f"Installation ID: {installation_id}")
+            
+            try:
+                token = self._get_installation_token(installation_id)
+                logger.info("Successfully obtained installation token")
+            except Exception as e:
+                logger.error(f"Failed to get installation token: {e}")
+                return
+            
             github = Github(token)
             
             # Get full PR details with files
-            repo = github.get_repo(pr_data['base']['repo']['full_name'])
-            pr = repo.get_pull(pr_data['number'])
-            
-            # Add files to PR data
-            pr_data['changed_files'] = [{'filename': f.filename} for f in pr.get_files()]
+            try:
+                repo_name = pr_data['base']['repo']['full_name']
+                logger.info(f"Getting repo: {repo_name}")
+                repo = github.get_repo(repo_name)
+                
+                logger.info(f"Getting PR #{pr_number}")
+                pr = repo.get_pull(pr_number)
+                
+                # Add files to PR data
+                files = list(pr.get_files())
+                pr_data['changed_files'] = [{'filename': f.filename} for f in files]
+                logger.info(f"Found {len(files)} changed files")
+                
+            except Exception as e:
+                logger.error(f"Failed to get PR details: {e}")
+                return
             
             # Extract context and create JIRA card
+            logger.info("Extracting PR context")
             pr_context = self.extract_pr_context(pr_data)
+            
+            logger.info("Creating JIRA card")
             result = await self.create_jira_card_from_pr(pr_context, user_request)
+            
+            logger.info(f"JIRA card creation result: {result}")
             
             # Post result as PR comment
             if result.get('success'):
                 comment_text = f"✅ Created JIRA issue: [{result['issue_key']}]({result['url']})\n\n📝 Summary: {pr_context['title']}"
+                logger.info(f"Posting success comment")
             else:
                 comment_text = f"❌ Failed to create JIRA issue: {result.get('error', 'Unknown error')}"
+                logger.info(f"Posting error comment")
             
             # Post comment on PR
-            pr.create_issue_comment(comment_text)
+            try:
+                pr.create_issue_comment(comment_text)
+                logger.info("Successfully posted comment to PR")
+            except Exception as e:
+                logger.error(f"Failed to post comment: {e}")
             
             logger.info(f"Processed PR comment for {pr_data['base']['repo']['full_name']}#{pr_data['number']}")
             
         except Exception as e:
-            logger.error(f"Error handling PR comment: {e}")
+            logger.error(f"Error handling PR comment: {e}", exc_info=True)
 
 
 # Initialize bot
@@ -260,26 +305,70 @@ bot = GitHubJiraBot()
 async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     """Handle GitHub webhooks"""
     
+    logger.info("=== Webhook received ===")
+    
+    # Log headers
+    headers = dict(request.headers)
+    logger.info(f"Headers: {headers}")
+    
     # Verify signature
     signature = request.headers.get('X-Hub-Signature-256', '')
     payload = await request.body()
     
+    logger.info(f"Signature: {signature}")
+    logger.info(f"Payload size: {len(payload)} bytes")
+    
     if not bot._verify_webhook_signature(payload, signature):
+        logger.error("Invalid webhook signature")
         raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    logger.info("Webhook signature verified")
     
     # Parse payload
     try:
         event_data = json.loads(payload.decode())
-    except json.JSONDecodeError:
+        logger.info(f"Parsed JSON payload successfully")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
     
     event_type = request.headers.get('X-GitHub-Event', '')
+    logger.info(f"Event type: {event_type}")
+    
+    # Log key payload info
+    if 'action' in event_data:
+        logger.info(f"Action: {event_data['action']}")
+    
+    if 'repository' in event_data:
+        repo_name = event_data['repository'].get('full_name', 'unknown')
+        logger.info(f"Repository: {repo_name}")
     
     # Handle different event types
     if event_type == 'issue_comment' and event_data.get('issue', {}).get('pull_request'):
-        # This is a PR comment
+        logger.info("This is a PR comment event")
+        pr_number = event_data.get('issue', {}).get('number', 'unknown')
+        comment_body = event_data.get('comment', {}).get('body', '')
+        comment_author = event_data.get('comment', {}).get('user', {}).get('login', 'unknown')
+        
+        logger.info(f"PR #{pr_number}")
+        logger.info(f"Comment by: {comment_author}")
+        logger.info(f"Comment body: {comment_body[:200]}...")
+        
+        # Check if bot is mentioned
+        match = re.search(BOT_MENTION_PATTERN, comment_body, re.IGNORECASE)
+        if match:
+            logger.info(f"Bot mentioned! User request: {match.group(1).strip()}")
+        else:
+            logger.info("Bot not mentioned in comment")
+        
         background_tasks.add_task(bot.handle_pr_comment, event_data)
+    else:
+        logger.info(f"Event type '{event_type}' not handled or not a PR comment")
+        if event_type == 'issue_comment':
+            if not event_data.get('issue', {}).get('pull_request'):
+                logger.info("This is an issue comment, not a PR comment")
     
+    logger.info("=== Webhook processing complete ===")
     return JSONResponse({"status": "ok"})
 
 
