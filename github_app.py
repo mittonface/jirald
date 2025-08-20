@@ -9,7 +9,7 @@ import json
 import hmac
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
 import jwt
@@ -34,7 +34,7 @@ GITHUB_PRIVATE_KEY = os.getenv('GITHUB_PRIVATE_KEY')  # Base64 encoded
 GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET')
 
 # Bot trigger patterns
-BOT_MENTION_PATTERN = r'@jira-bot\s+(.*)'
+BOT_MENTION_PATTERN = r'/jirald\s+(.*)'
 
 app = FastAPI(title="JIRA GitHub Bot", version="1.0.0")
 
@@ -63,7 +63,7 @@ class GitHubJiraBot:
     
     def _get_jwt_token(self) -> str:
         """Generate JWT token for GitHub App authentication"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = {
             'iat': now,
             'exp': now + timedelta(minutes=10),
@@ -164,25 +164,17 @@ User Request: {user_request}
                 logger.error(f"Failed to create Bedrock client: {e}")
                 return {"success": False, "error": f"Bedrock client creation failed: {e}"}
             
-            system_prompt = """You are a JIRA card creation assistant with access to PR context.
-
-Analyze the PR information and user request to create an appropriate JIRA card.
-
-Consider:
-- The scope and type of changes in the PR
-- The user's specific request
-- Whether this should be a Task, Story, or Epic
-- How to write a clear summary and detailed description
-
-Guidelines:
-- Task: Bug fixes, small improvements, code changes
-- Story: User-facing features, functionality improvements
-- Epic: Large features, major architectural changes
-
-Include relevant PR details in the description (author, files changed, etc.).
-
-Respond with ONLY a JSON object:
-{"summary": "Clear title", "description": "Detailed description with PR context", "issue_type": "Task"}"""
+            # Load system prompt from file
+            with open('prompts/card_creation_prompt.md', 'r') as f:
+                prompt_content = f.read()
+                # Extract just the text content, removing markdown formatting
+                lines = prompt_content.split('\n')
+                system_prompt = []
+                for line in lines:
+                    # Skip headers and code blocks
+                    if not line.startswith('#') and not line.startswith('```'):
+                        system_prompt.append(line)
+                system_prompt = '\n'.join(system_prompt).strip()
 
             response = bedrock.invoke_model(
                 modelId='anthropic.claude-3-haiku-20240307-v1:0',
@@ -218,6 +210,64 @@ Respond with ONLY a JSON object:
         except Exception as e:
             logger.error(f"Error creating JIRA card: {e}")
             return {"success": False, "error": str(e)}
+    
+    async def generate_response_comment(self, user_request: str, pr_context: Dict[str, Any], jira_result: Dict[str, Any]) -> str:
+        """Generate LLM response for PR comment"""
+        try:
+            # Load response generation prompt
+            with open('prompts/response_generation_prompt.md', 'r') as f:
+                prompt_content = f.read()
+                # Extract just the text content, removing markdown formatting
+                lines = prompt_content.split('\n')
+                system_prompt = []
+                for line in lines:
+                    # Skip headers and code blocks
+                    if not line.startswith('#') and not line.startswith('```'):
+                        system_prompt.append(line)
+                system_prompt = '\n'.join(system_prompt).strip()
+            
+            # Prepare context for LLM
+            context_text = f"""
+User Request: {user_request}
+
+PR Information:
+- Title: {pr_context['title']}
+- Repository: {pr_context['repository']}
+- Files changed: {len(pr_context['files_changed'])} files
+- Changes: +{pr_context['additions']} -{pr_context['deletions']} lines
+
+JIRA Creation Result:
+- Success: {jira_result.get('success', False)}
+"""
+            if jira_result.get('success'):
+                context_text += f"- Issue Key: {jira_result['issue_key']}\n- URL: {jira_result['url']}"
+            else:
+                context_text += f"- Error: {jira_result.get('error', 'Unknown error')}"
+            
+            # Call Bedrock for response generation
+            import boto3
+            bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+            
+            response = bedrock.invoke_model(
+                modelId='anthropic.claude-3-haiku-20240307-v1:0',
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 500,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": context_text}]
+                })
+            )
+            
+            response_body = json.loads(response['body'].read())
+            return response_body['content'][0]['text'].strip()
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            # Fallback to simple response
+            if jira_result.get('success'):
+                return f"✅ Created JIRA issue: [{jira_result['issue_key']}]({jira_result['url']})\n\n📝 Summary: {pr_context['title']}"
+            else:
+                return f"❌ Failed to create JIRA issue: {jira_result.get('error', 'Unknown error')}"
     
     async def handle_pr_comment(self, payload: Dict[str, Any]):
         """Handle PR comment events"""
@@ -319,13 +369,9 @@ Respond with ONLY a JSON object:
             
             logger.info(f"JIRA card creation result: {result}")
             
-            # Post result as PR comment
-            if result.get('success'):
-                comment_text = f"✅ Created JIRA issue: [{result['issue_key']}]({result['url']})\n\n📝 Summary: {pr_context['title']}"
-                logger.info(f"Posting success comment")
-            else:
-                comment_text = f"❌ Failed to create JIRA issue: {result.get('error', 'Unknown error')}"
-                logger.info(f"Posting error comment")
+            # Generate LLM response for PR comment
+            logger.info("Generating response comment")
+            comment_text = await self.generate_response_comment(user_request, pr_context, result)
             
             # Post comment on PR
             try:
@@ -418,7 +464,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"status": "JIRA GitHub Bot is running", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "JIRA GitHub Bot is running", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/health")
