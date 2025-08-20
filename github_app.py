@@ -111,7 +111,8 @@ class GitHubJiraBot:
             'files_changed': files_changed,
             'additions': pr.get('additions', 0),
             'deletions': pr.get('deletions', 0),
-            'commits': pr.get('commits', 0)
+            'commits': pr.get('commits', 0),
+            'code_diff': pr.get('code_diff', '')
         }
         
         return context
@@ -135,6 +136,9 @@ PR Description:
 
 Files Changed:
 {', '.join(pr_context['files_changed'][:10])}{'...' if len(pr_context['files_changed']) > 10 else ''}
+
+Code Changes:
+{pr_context['code_diff'][:6000] if pr_context['code_diff'] else 'No code diff available'}
 
 User Request: {user_request}
 """
@@ -241,6 +245,9 @@ PR Information:
 - Repository: {pr_context['repository']}
 - Files changed: {len(pr_context['files_changed'])} files
 - Changes: +{pr_context['additions']} -{pr_context['deletions']} lines
+
+Code Changes (sample):
+{pr_context['code_diff'][:2000] if pr_context['code_diff'] else 'No code diff available'}
 
 JIRA Creation Result:
 - Success: {jira_result.get('success', False)}
@@ -365,6 +372,37 @@ JIRA Creation Result:
                 files = list(pr.get_files())
                 pr_data['changed_files'] = [{'filename': f.filename} for f in files]
                 logger.info(f"Found {len(files)} changed files")
+                
+                # Get code diff for context (limit to reasonable size)
+                try:
+                    pr_diff = ""
+                    total_diff_size = 0
+                    max_diff_size = 8000  # Limit to avoid token limits
+                    
+                    for file in files:
+                        if total_diff_size >= max_diff_size:
+                            pr_diff += f"\n... (truncated - showing first {len([f for f in files if total_diff_size < max_diff_size])} files)\n"
+                            break
+                            
+                        file_diff = f"\n--- {file.filename} ---\n"
+                        if file.patch:
+                            file_diff += file.patch[:2000]  # Limit per file
+                            if len(file.patch) > 2000:
+                                file_diff += "\n... (file diff truncated)"
+                        file_diff += "\n"
+                        
+                        if total_diff_size + len(file_diff) <= max_diff_size:
+                            pr_diff += file_diff
+                            total_diff_size += len(file_diff)
+                        else:
+                            break
+                    
+                    pr_data['code_diff'] = pr_diff
+                    logger.info(f"Retrieved code diff ({len(pr_diff)} characters)")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to get PR diff: {e}")
+                    pr_data['code_diff'] = ""
                 
             except Exception as e:
                 logger.error(f"Failed to get PR details: {e}")

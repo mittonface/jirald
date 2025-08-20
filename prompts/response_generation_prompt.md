@@ -29,6 +29,7 @@ Your job is to generate a clear, succinct that will be posted as a comment on a 
 - Keep it informative but not overly long
 - Include the JIRA link if successful
 - Do not ask for feedback
+- Use markdown to neatly format your response
 
 ## Response Format
 
