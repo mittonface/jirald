@@ -141,7 +141,28 @@ User Request: {user_request}
             
             # Use Bedrock to analyze and create appropriate JIRA card
             import boto3
-            bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+            
+            # Debug AWS configuration
+            logger.info("=== AWS/Bedrock Configuration Debug ===")
+            
+            # Check for AWS credentials in environment
+            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+            aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+            
+            logger.info(f"AWS_ACCESS_KEY_ID present: {bool(aws_access_key)}")
+            logger.info(f"AWS_SECRET_ACCESS_KEY present: {bool(aws_secret_key)}")
+            logger.info(f"AWS_DEFAULT_REGION: {aws_region}")
+            
+            if aws_access_key:
+                logger.info(f"AWS_ACCESS_KEY_ID starts with: {aws_access_key[:4]}...")
+            
+            try:
+                bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+                logger.info("Bedrock client created successfully")
+            except Exception as e:
+                logger.error(f"Failed to create Bedrock client: {e}")
+                return {"success": False, "error": f"Bedrock client creation failed: {e}"}
             
             system_prompt = """You are a JIRA card creation assistant with access to PR context.
 

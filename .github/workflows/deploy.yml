@@ -81,7 +81,7 @@ jobs:
           JIRA_API_TOKEN=${{ secrets.JIRA_API_TOKEN }}
           AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_DEFAULT_REGION=us-east-1
           GITHUB_PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}
           EOF
 
@@ -128,10 +128,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             echo "🔄 Performing health check..."
-            
+
             # Wait for services to initialize
             sleep 15
-            
+
             # Health check with retries
             for i in {1..6}; do
               echo "Health check attempt $i/6..."
