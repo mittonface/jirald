@@ -71,13 +71,27 @@ jobs:
         run: |
           docker save ${{ env.IMAGE_NAME }}:latest | gzip > jirald-mcp-server.tar.gz
 
+      - name: Create environment file
+        run: |
+          cat << EOF > .env
+          GITHUB_APP_ID=${{ secrets.APP_ID }}
+          GITHUB_WEBHOOK_SECRET=${{ secrets.WEBHOOK_SECRET }}
+          JIRA_URL=${{ secrets.JIRA_URL }}
+          JIRA_USERNAME=${{ secrets.JIRA_USERNAME }}
+          JIRA_API_TOKEN=${{ secrets.JIRA_API_TOKEN }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
+          GITHUB_PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}
+          EOF
+
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "jirald-mcp-server.tar.gz,docker-compose.yml,.env.example"
+          source: "jirald-mcp-server.tar.gz,docker-compose.yml,.env"
           target: "/root/jirald-mcp-server"
           strip_components: 0
 
