@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache
+htmlcov
+.coverage
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Documentation and misc
+README.md
+*.md
+LICENSE
+
+# Private keys (commented out - needed for GitHub App)
+# *.pem

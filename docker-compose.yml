@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  jirald-github-app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_PRIVATE_KEY=/app/mittonface-jirald.2025-08-20.private-key.pem
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - JIRA_URL=${JIRA_URL}
+      - JIRA_USERNAME=${JIRA_USERNAME}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

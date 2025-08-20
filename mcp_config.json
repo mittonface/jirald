@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "jira": {
+      "command": "uv",
+      "args": ["run", "python", "mcp_server.py"],
+      "cwd": "/Users/brent/Desktop/coding/jirald-mcp-server",
+      "env": {
+        "PYTHONPATH": "/Users/brent/Desktop/coding/jirald-mcp-server"
+      }
+    }
+  }
+}
