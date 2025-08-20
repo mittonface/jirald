@@ -1,0 +1,140 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: jirald-mcp-server
+
+jobs:
+  validate:
+    name: Validate Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker files
+        run: |
+          if [ -f Dockerfile ]; then
+            docker run --rm -i hadolint/hadolint < Dockerfile || echo "Dockerfile linting completed with warnings"
+          fi
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and export Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.IMAGE_NAME }}:latest
+          outputs: type=docker,dest=/tmp/jirald-mcp-server.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jirald-mcp-server-image
+          path: /tmp/jirald-mcp-server.tar
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: jirald-mcp-server-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: |
+          docker load --input /tmp/jirald-mcp-server.tar
+
+      - name: Compress Docker image
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:latest | gzip > jirald-mcp-server.tar.gz
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "jirald-mcp-server.tar.gz,docker-compose.yml,.env.example"
+          target: "/root/jirald-mcp-server"
+          strip_components: 0
+
+      - name: Deploy application
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/jirald-mcp-server
+
+            # Load the new Docker image
+            docker load < jirald-mcp-server.tar.gz
+
+            # Create external network if it doesn't exist
+            docker network create proxy-network 2>/dev/null || true
+
+            # Stop existing containers gracefully
+            docker-compose down --timeout 30 || true
+
+            # Start services
+            docker-compose up -d
+
+            # Clean up
+            rm -f jirald-mcp-server.tar.gz
+            docker image prune -f --filter "until=24h"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "🔄 Performing health check..."
+            
+            # Wait for services to initialize
+            sleep 15
+            
+            # Health check with retries
+            for i in {1..6}; do
+              echo "Health check attempt $i/6..."
+              
+              if curl -f -s --max-time 10 http://localhost:8000/health >/dev/null 2>&1; then
+                echo "✅ Service is healthy and responding!"
+                echo "🚀 Deployment completed successfully!"
+                exit 0
+              elif [ $i -eq 6 ]; then
+                echo "❌ Health check failed after $i attempts"
+                echo "📋 Container logs:"
+                docker-compose logs --tail=30
+                echo "📊 Container status:"
+                docker-compose ps
+                exit 1
+              else
+                echo "⏳ Service not ready, waiting 15 seconds..."
+                sleep 15
+              fi
+            done
