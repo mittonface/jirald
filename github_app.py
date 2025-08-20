@@ -205,6 +205,12 @@ User Request: {user_request}
                 issue_type=issue_type
             )
             
+            # Add card details to result for response generation
+            if result.get('success'):
+                result['card_summary'] = card_data["summary"]
+                result['card_description'] = card_data["description"]
+                result['card_issue_type'] = issue_type
+            
             return result
             
         except Exception as e:
@@ -240,7 +246,11 @@ JIRA Creation Result:
 - Success: {jira_result.get('success', False)}
 """
             if jira_result.get('success'):
-                context_text += f"- Issue Key: {jira_result['issue_key']}\n- URL: {jira_result['url']}"
+                context_text += f"""- Issue Key: {jira_result['issue_key']}
+- URL: {jira_result['url']}
+- Card Summary: {jira_result.get('card_summary', 'N/A')}
+- Card Description: {jira_result.get('card_description', 'N/A')}
+- Issue Type: {jira_result.get('card_issue_type', 'N/A')}"""
             else:
                 context_text += f"- Error: {jira_result.get('error', 'Unknown error')}"
             
