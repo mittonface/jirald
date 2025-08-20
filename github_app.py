@@ -223,13 +223,18 @@ Respond with ONLY a JSON object:
             
             logger.info(f"User request: {user_request}")
             
-            # Get PR data
-            pr_data = payload.get('pull_request', {})
-            if not pr_data:
-                logger.error("No pull_request data in payload")
+            # Get PR data - for issue_comment events, PR data is in issue.pull_request
+            issue_data = payload.get('issue', {})
+            pr_url = issue_data.get('pull_request', {}).get('url', '')
+            
+            if not pr_url:
+                logger.error("No pull_request URL in payload")
                 return
             
-            pr_number = pr_data.get('number', 'unknown')
+            logger.info(f"PR URL from issue: {pr_url}")
+            
+            # Get basic info from issue data
+            pr_number = issue_data.get('number', 'unknown')
             logger.info(f"PR number: {pr_number}")
             
             # Get installation token
@@ -251,12 +256,29 @@ Respond with ONLY a JSON object:
             
             # Get full PR details with files
             try:
-                repo_name = pr_data['base']['repo']['full_name']
+                repo_name = payload.get('repository', {}).get('full_name', '')
                 logger.info(f"Getting repo: {repo_name}")
                 repo = github.get_repo(repo_name)
                 
                 logger.info(f"Getting PR #{pr_number}")
                 pr = repo.get_pull(pr_number)
+                
+                # Build PR data structure from the actual PR object
+                pr_data = {
+                    'number': pr.number,
+                    'title': pr.title,
+                    'body': pr.body,
+                    'user': {'login': pr.user.login},
+                    'head': {'ref': pr.head.ref},
+                    'base': {
+                        'ref': pr.base.ref,
+                        'repo': {'full_name': repo_name}
+                    },
+                    'html_url': pr.html_url,
+                    'additions': pr.additions,
+                    'deletions': pr.deletions,
+                    'commits': pr.commits
+                }
                 
                 # Add files to PR data
                 files = list(pr.get_files())
