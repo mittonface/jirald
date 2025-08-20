@@ -7,7 +7,7 @@ services:
       - "8000:8000"
     environment:
       - GITHUB_APP_ID=${GITHUB_APP_ID}
-      - GITHUB_PRIVATE_KEY=/app/mittonface-jirald.2025-08-20.private-key.pem
+      - GITHUB_PRIVATE_KEY=${GITHUB_PRIVATE_KEY}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
       - JIRA_URL=${JIRA_URL}
       - JIRA_USERNAME=${JIRA_USERNAME}

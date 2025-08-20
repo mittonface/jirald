@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # GitHub App configuration
 GITHUB_APP_ID = os.getenv('GITHUB_APP_ID')
-GITHUB_PRIVATE_KEY = os.getenv('GITHUB_PRIVATE_KEY')  # Base64 encoded or file path
+GITHUB_PRIVATE_KEY = os.getenv('GITHUB_PRIVATE_KEY')  # Base64 encoded
 GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET')
 
 # Bot trigger patterns
@@ -49,23 +49,17 @@ class GitHubJiraBot:
         self.jira_client = SimpleJiraClient()
     
     def _load_private_key(self) -> str:
-        """Load GitHub App private key"""
+        """Load GitHub App private key from base64 encoded environment variable"""
         key = GITHUB_PRIVATE_KEY
         if not key:
             raise ValueError("GITHUB_PRIVATE_KEY not configured")
         
-        # If it looks like a file path, read the file
-        if key.startswith('/') or key.endswith('.pem'):
-            with open(key, 'r') as f:
-                return f.read()
-        
-        # If it's base64 encoded, decode it
+        # Decode base64 encoded private key
         try:
             import base64
             return base64.b64decode(key).decode('utf-8')
-        except:
-            # Assume it's already the raw key
-            return key
+        except Exception as e:
+            raise ValueError(f"Failed to decode base64 private key: {e}")
     
     def _get_jwt_token(self) -> str:
         """Generate JWT token for GitHub App authentication"""
