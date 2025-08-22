@@ -299,6 +299,19 @@ JIRA Creation Result:
             except Exception as e:
                 logger.error(f"Failed to post comment: {e}")
             
+            # Update labels if JIRA card was successfully created
+            if result.get('success'):
+                try:
+                    # Remove card-required label
+                    pr.remove_from_labels('card-required')
+                    logger.info("Removed 'card-required' label")
+                    
+                    # Add card-created label
+                    pr.add_to_labels('card-created')
+                    logger.info("Added 'card-created' label")
+                except Exception as e:
+                    logger.error(f"Failed to update labels: {e}")
+            
             logger.info(f"Processed labeled PR for {repo_name}#{pr_number}")
             
         except Exception as e:

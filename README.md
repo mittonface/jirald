@@ -110,6 +110,9 @@ Deploy to a cloud service and update your GitHub App webhook URL.
 **Option 2: Add the "card-required" label to any PR:**
 - Simply add the `card-required` label to a PR
 - The bot will automatically create a JIRA card based on the PR context
+- After successful card creation, the bot will:
+  - Remove the `card-required` label
+  - Add a `card-created` label
 - No manual comment needed
 
 In both cases, the bot will:
@@ -172,6 +175,7 @@ The system automatically chooses appropriate issue types:
 2. Add the `card-required` label to the PR
 3. Bot automatically creates a JIRA card based on PR context
 4. Bot posts a comment with JIRA issue details and link
+5. Bot removes `card-required` label and adds `card-created` label
 
 ## Architecture
 
