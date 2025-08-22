@@ -156,6 +156,13 @@ JIRA {action.title()} Result:
 - Card Summary: {jira_result.get('card_summary', 'N/A')}
 - Card Description: {jira_result.get('card_description', 'N/A')}
 - Issue Type: {jira_result.get('card_issue_type', 'N/A')}"""
+                elif action == 'update':
+                    # Show the actual updated content from JIRA
+                    context_text += f"""
+- Current Summary: {jira_result.get('current_summary', 'N/A')}
+- Current Description: {jira_result.get('current_description', 'N/A')}
+- Current Issue Type: {jira_result.get('current_issue_type', 'N/A')}
+- Fields Updated: {', '.join(jira_result.get('updated_fields', {}).keys())}"""
         else:
             context_text += f"- Error: {jira_result.get('error', 'Unknown error')}"
         
@@ -362,6 +369,14 @@ Only update fields that the user specifically requests or that need to be change
                 k: v for k, v in update_response.items() 
                 if v is not None and k in ['summary', 'description', 'issue_type']
             }
+            
+            # Get the updated card state to show actual changes
+            updated_issue_result = self.jira_client.get_issue(issue_key)
+            if updated_issue_result.get('success'):
+                updated_issue = updated_issue_result['issue']
+                result['current_summary'] = updated_issue['summary']
+                result['current_description'] = updated_issue['description']
+                result['current_issue_type'] = updated_issue['issue_type']
         
         return result
 
