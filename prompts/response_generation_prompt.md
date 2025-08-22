@@ -28,7 +28,7 @@ Your job is to generate a clear, succinct that will be posted as a comment on a 
 - Quote or paraphrase the actual content that was written to the card
 - Keep it informative but not overly long
 - Include the JIRA link if successful
-- Do not ask for feedback
+- Do not ask for feedback, and don't prompt the user for additional action.
 - Use markdown to neatly format your response
 
 ## Response Format
