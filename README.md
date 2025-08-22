@@ -100,16 +100,20 @@ Deploy to a cloud service and update your GitHub App webhook URL.
 
 ### Step 4: Use in Pull Requests
 
-**Tag the bot in any PR comment:**
+**Option 1: Tag the bot in any PR comment:**
 ```
 /jirald Create a task to track the changes in this PR
 /jirald Make a story for this new feature
 /jirald Track this as an epic for the dashboard improvements
 ```
 
-The bot will:
+**Option 2: Add the "card-required" label to any PR:**
+- Simply add the `card-required` label to a PR
+- The bot will automatically create a JIRA card based on the PR context
+- No manual comment needed
+
+In both cases, the bot will:
 - Extract PR context (title, description, files changed, author)
-- Combine with your request
 - Create an appropriate JIRA card with full context
 - Post a comment with the JIRA issue link
 
@@ -132,11 +136,14 @@ The system automatically chooses appropriate issue types:
 - GitHub App authentication using JWT tokens
 - Installation-specific access tokens
 
-### Bot Commands
-Use `/jirald` followed by your request:
+### Bot Usage
+**Comment Commands:**
 - `/jirald Create a task for these bug fixes`
 - `/jirald Make a story for this new feature`
 - `/jirald Track this refactoring work`
+
+**Label Trigger:**
+- Add `card-required` label to any PR for automatic card creation
 
 ## API Endpoints
 
@@ -152,12 +159,19 @@ Use `/jirald` followed by your request:
 4. **Environment variables**: Double-check all required vars are set
 5. **Bot mention format**: Use `/jirald` not `@jirald`
 
-## Example Workflow
+## Example Workflows
 
+**Comment-based:**
 1. Create a PR with your changes
 2. Add a comment: `/jirald Create a task to track these API improvements`
 3. Bot analyzes PR context and creates JIRA card
 4. Bot replies with JIRA issue details and link
+
+**Label-based:**
+1. Create a PR with your changes
+2. Add the `card-required` label to the PR
+3. Bot automatically creates a JIRA card based on PR context
+4. Bot posts a comment with JIRA issue details and link
 
 ## Architecture
 

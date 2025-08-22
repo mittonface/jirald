@@ -237,6 +237,73 @@ JIRA Creation Result:
         except Exception as e:
             logger.error(f"Error handling PR comment: {e}", exc_info=True)
 
+    async def handle_pr_labeled(self, payload: Dict[str, Any]):
+        """Handle PR labeled events for card-required label"""
+        try:
+            logger.info("=== Processing PR label event ===")
+            
+            # Check if it's the card-required label
+            label = payload.get('label', {})
+            label_name = label.get('name', '').lower()
+            
+            if label_name != 'card-required':
+                logger.info(f"Label '{label_name}' is not 'card-required' - skipping")
+                return
+            
+            logger.info("card-required label detected!")
+            
+            # Get PR details
+            pr_data_raw = payload.get('pull_request', {})
+            if not pr_data_raw:
+                logger.error("No pull_request data in payload")
+                return
+            
+            installation_id = payload.get('installation', {}).get('id')
+            if not installation_id:
+                logger.error("No installation ID in payload")
+                return
+            
+            repo_name = payload.get('repository', {}).get('full_name', '')
+            pr_number = pr_data_raw.get('number')
+            
+            if not repo_name or not pr_number:
+                logger.error("Missing repo name or PR number")
+                return
+            
+            logger.info(f"Processing labeled PR #{pr_number} in {repo_name}")
+            
+            # Get GitHub client and detailed PR data with files
+            github_client = self.github_service.get_authenticated_client(installation_id)
+            pr_data, pr = self.github_service.get_pr_with_files(github_client, repo_name, pr_number)
+            
+            logger.info(f"Found {len(pr_data.get('changed_files', []))} changed files")
+            
+            # Extract context and create JIRA card with automatic request
+            pr_context = self._extract_pr_context(pr_data)
+            
+            # Generate automatic request based on PR
+            auto_request = f"Create a card to track the changes in PR #{pr_number}: {pr_context['title']}"
+            
+            logger.info("Creating JIRA card for labeled PR")
+            result = await self.create_jira_card_from_pr(pr_context, auto_request)
+            
+            logger.info(f"JIRA card creation result: {result}")
+            
+            # Generate and post response comment
+            logger.info("Generating response comment")
+            comment_text = await self.generate_response_comment(auto_request, pr_context, result)
+            
+            try:
+                pr.create_issue_comment(comment_text)
+                logger.info("Successfully posted comment to PR")
+            except Exception as e:
+                logger.error(f"Failed to post comment: {e}")
+            
+            logger.info(f"Processed labeled PR for {repo_name}#{pr_number}")
+            
+        except Exception as e:
+            logger.error(f"Error handling PR label: {e}", exc_info=True)
+
 
 # Initialize bot
 bot = GitHubJiraBot()
@@ -286,8 +353,22 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(bot.handle_pr_comment, event_data)
         else:
             logger.info("Bot not mentioned in comment")
+    
+    # Handle PR labeled events
+    elif event_type == 'pull_request' and event_data.get('action') == 'labeled':
+        pr_number = event_data.get('pull_request', {}).get('number', 'unknown')
+        label_name = event_data.get('label', {}).get('name', '')
+        
+        logger.info(f"PR #{pr_number} labeled with '{label_name}'")
+        
+        if label_name.lower() == 'card-required':
+            logger.info("card-required label detected - creating JIRA card")
+            background_tasks.add_task(bot.handle_pr_labeled, event_data)
+        else:
+            logger.info(f"Label '{label_name}' is not 'card-required' - skipping")
+    
     else:
-        logger.info(f"Event type '{event_type}' not handled or not a PR comment")
+        logger.info(f"Event type '{event_type}' not handled")
     
     logger.info("=== Webhook processing complete ===")
     return JSONResponse({"status": "ok"})
