@@ -263,7 +263,7 @@ JIRA {action.title()} Result:
             
             if intent_response.get('action') == 'update' and intent_response.get('issue_key'):
                 # Update existing issue
-                return await self._update_jira_issue(intent_response)
+                return await self._update_jira_issue(intent_response, pr_context, user_request)
             elif intent_response.get('action') == 'query':
                 # Return query results
                 return {
@@ -307,20 +307,61 @@ Analyze the user's request and determine what they want to do:
 If it's an update request, specify which issue key to update and what changes to make.
 """
     
-    async def _update_jira_issue(self, intent_response: Dict[str, Any]) -> Dict[str, Any]:
-        """Update an existing JIRA issue"""
+    def _build_update_context(self, pr_context: Dict[str, Any], user_request: str, current_issue: Dict[str, Any]) -> str:
+        """Build context for updating a JIRA card with current state"""
+        return f"""
+Current JIRA Card State:
+- Issue Key: {current_issue['key']}
+- Current Summary: {current_issue['summary']}
+- Current Description: {current_issue['description']}
+- Current Issue Type: {current_issue['issue_type']}
+- Current Status: {current_issue['status']}
+
+PR Context:
+- Title: {pr_context['title']}
+- Repository: {pr_context['repository']}
+- Files affected: {len(pr_context['files_changed'])} files
+
+User Update Request: {user_request}
+
+Based on the current card state and the user's request, determine what updates should be made to the JIRA card.
+Only update fields that the user specifically requests or that need to be changed based on their request.
+"""
+    
+    async def _update_jira_issue(self, intent_response: Dict[str, Any], pr_context: Dict[str, Any], user_request: str) -> Dict[str, Any]:
+        """Update an existing JIRA issue with current state context"""
         issue_key = intent_response.get('issue_key')
-        updates = intent_response.get('updates', {})
         
+        # Get current state of the JIRA issue
+        current_issue_result = self.jira_client.get_issue(issue_key)
+        if not current_issue_result.get('success'):
+            return {
+                "success": False,
+                "error": f"Could not retrieve current state of {issue_key}: {current_issue_result.get('error')}"
+            }
+        
+        current_issue = current_issue_result['issue']
+        
+        # Build context with current issue state for intelligent updates
+        update_context = self._build_update_context(pr_context, user_request, current_issue)
+        
+        # Use Bedrock to generate intelligent updates based on current state
+        update_response = self.bedrock_service.generate_card_update(update_context)
+        
+        # Apply the updates
         result = self.jira_client.update_issue(
             issue_key=issue_key,
-            summary=updates.get('summary'),
-            description=updates.get('description'),
-            issue_type=updates.get('issue_type')
+            summary=update_response.get('summary'),
+            description=update_response.get('description'),
+            issue_type=update_response.get('issue_type')
         )
         
         if result.get('success'):
             result['action'] = 'update'
+            result['updated_fields'] = {
+                k: v for k, v in update_response.items() 
+                if v is not None and k in ['summary', 'description', 'issue_type']
+            }
         
         return result
 

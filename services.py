@@ -5,7 +5,7 @@ Service classes for GitHub JIRA bot
 
 import json
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -116,6 +116,29 @@ Respond with ONLY a JSON object.
         except json.JSONDecodeError:
             # Fall back to create if we can't parse the response
             return {"action": "create"}
+    
+    def generate_card_update(self, context_text: str) -> Dict[str, Any]:
+        """Generate updates for existing JIRA card based on current state and user request"""
+        system_prompt = PromptService.load_prompt('card_update_prompt.md')
+        
+        response = self.client.invoke_model(
+            modelId=Config.BEDROCK_MODEL_ID,
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": context_text}]
+            })
+        )
+        
+        response_body = json.loads(response['body'].read())
+        ai_response = response_body['content'][0]['text'].strip()
+        
+        try:
+            return json.loads(ai_response)
+        except json.JSONDecodeError:
+            # Return empty if we can't parse - no updates
+            return {}
 
 
 class GitHubService:
