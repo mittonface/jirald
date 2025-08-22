@@ -1,260 +1,166 @@
-# JIRA MCP Server
+# JIRA Card Creation GitHub App
 
-A Python application that provides JIRA functionality through both a direct API wrapper and an MCP (Model Context Protocol) server for LLM applications.
+A GitHub App that creates JIRA cards using natural language through AWS Bedrock, with automated card creation from PR context when mentioned in comments.
 
-## Features
+## What It Does
 
-### JIRA Operations
-- Create new JIRA issues
-- Update existing issues  
-- Search issues with JQL (JIRA Query Language)
-- Add comments to issues
-- Transition issues between statuses
-- Get issue details and available transitions
+**Creates JIRA cards from PR context** when you mention the bot in pull request comments. The bot analyzes the PR details and your request to generate appropriate JIRA issues automatically.
 
-### MCP Server
-- Full MCP (Model Context Protocol) server implementation
-- 7 JIRA tools available to LLM applications
-- Automatic schema validation
-- Comprehensive error handling
-- Logging support
+## Project Structure
+
+### Core Files
+- `github_app.py` - Main GitHub App for PR-based JIRA card creation
+- `jira_client.py` - JIRA client for creating issues
+- `config.py` - Centralized configuration management
+- `services.py` - Service classes for GitHub, Bedrock, and prompt handling
+
+### Configuration
+- `.env` - Your JIRA, AWS, and GitHub credentials
 
 ## Setup
 
-This project uses [uv](https://github.com/astral-sh/uv) for dependency management.
+### 1. Install Dependencies
 
-1. **Install uv** (if not already installed):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
+```bash
+uv sync
+source .venv/bin/activate
+```
 
-2. **Activate the virtual environment**:
-   ```bash
-   source .venv/bin/activate
-   ```
+### 2. Configure Credentials
 
-3. **Install dependencies** (already done if you used uv init):
-   ```bash
-   uv sync
-   ```
+Create a `.env` file with:
 
-## Configuration
+```bash
+# JIRA Configuration
+JIRA_URL=https://yourcompany.atlassian.net
+JIRA_USERNAME=your-email@company.com
+JIRA_API_TOKEN=your-api-token
 
-Before using the JIRA client, you need to set up your credentials:
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret
 
-1. **Get your JIRA API token**:
-   - Go to https://id.atlassian.com/manage-profile/security/api-tokens
-   - Create a new API token
-   - Copy the token (you won't be able to see it again)
-
-2. **Set up your .env file**:
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Then edit `.env` with your actual values:
-   ```bash
-   JIRA_URL=https://yourcompany.atlassian.net
-   JIRA_USERNAME=your-email@company.com
-   JIRA_API_TOKEN=your-api-token
-   DEFAULT_PROJECT_KEY=YOURPROJECT
-   ```
-
-   **Alternative**: You can still use environment variables:
-   ```bash
-   export JIRA_URL="https://yourcompany.atlassian.net"
-   export JIRA_USERNAME="your-email@company.com"
-   export JIRA_API_TOKEN="your-api-token"
-   ```
+# GitHub App Configuration
+GITHUB_APP_ID=your_app_id_here
+GITHUB_PRIVATE_KEY=your_base64_encoded_private_key
+GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
+```
 
 ## Usage
 
-### Basic Example
+### Step 1: Create GitHub App
 
-```python
-from jira_client import JiraClient
+1. **Go to GitHub Settings**:
+   - Personal account: `https://github.com/settings/apps`
+   - Organization: `https://github.com/organizations/YOUR_ORG/settings/apps`
 
-# Initialize client
-jira = JiraClient(
-    base_url="https://yourcompany.atlassian.net",
-    username="your-email@company.com", 
-    api_token="your-api-token"
-)
+2. **Click "New GitHub App"**
 
-# Create an issue
-issue = jira.create_issue(
-    project_key="PROJ",
-    summary="New bug report",
-    issue_type="Bug",
-    description="Description of the bug",
-    priority="High"
-)
+3. **Configure Basic Information**:
+   - **App name**: `JIRA Card Creator`
+   - **Description**: `Creates JIRA cards from PR context when tagged`
+   - **Homepage URL**: `https://your-domain.com`
+   - **Webhook URL**: `https://your-server.com/webhook`
+   - **Webhook secret**: Generate a strong secret and save it
 
-# Search for issues
-results = jira.search_issues("project = PROJ AND status = Open")
+4. **Set Permissions**:
+   - **Repository permissions**:
+     - Pull requests: `Read & Write`
+     - Issues: `Read & Write` 
+     - Contents: `Read`
+     - Metadata: `Read`
+   - **Subscribe to events**:
+     - [x] Issue comments
+     - [x] Pull requests
 
-# Update an issue
-jira.update_issue("PROJ-123", summary="Updated summary")
+5. **Create the app** and note down:
+   - **App ID** (add to `.env`)
+   - **Download the private key** (base64 encode and add to `.env`)
 
-# Add a comment
-jira.add_comment("PROJ-123", "This is a comment")
-```
+### Step 2: Install the App on Repository
 
-### Run the Example Script
+1. **Go to your GitHub App page**:
+   - `https://github.com/settings/apps/YOUR_APP_NAME`
 
+2. **Click "Install App"**
+
+3. **Choose repositories**:
+   - Select specific repositories or "All repositories"
+
+### Step 3: Deploy the Server
+
+**Local Development:**
 ```bash
-python example.py
+python github_app.py
+```
+Server runs on `http://localhost:8000`
+
+**Production Deployment:**
+Deploy to a cloud service and update your GitHub App webhook URL.
+
+### Step 4: Use in Pull Requests
+
+**Tag the bot in any PR comment:**
+```
+/jirald Create a task to track the changes in this PR
+/jirald Make a story for this new feature
+/jirald Track this as an epic for the dashboard improvements
 ```
 
-### Using as an MCP Server
+The bot will:
+- Extract PR context (title, description, files changed, author)
+- Combine with your request
+- Create an appropriate JIRA card with full context
+- Post a comment with the JIRA issue link
 
-The application can run as an MCP server to provide JIRA functionality to LLM applications like Claude Desktop.
+## Issue Types
 
-1. **Start the MCP server**:
-   ```bash
-   python mcp_server.py
-   ```
+The system automatically chooses appropriate issue types:
+- **Task** - Bug fixes, small improvements, general work
+- **Story** - User features, functionality
+- **Epic** - Large projects, major features
+- **Subtask** - Work that's part of larger tasks
 
-2. **Or use the runner script**:
-   ```bash
-   python run_mcp_server.py
-   ```
+## Features
 
-3. **Configure in Claude Desktop** (add to your MCP settings):
-   ```json
-   {
-     "mcpServers": {
-       "jira": {
-         "command": "uv",
-         "args": ["run", "python", "mcp_server.py"],
-         "cwd": "/path/to/jirald-mcp-server",
-         "env": {
-           "PYTHONPATH": "/path/to/jirald-mcp-server"
-         }
-       }
-     }
-   }
-   ```
+### Webhook Events
+- **Issue comments** on PRs (when you tag the bot)
+- **Pull request** events (for context)
 
-### Available MCP Tools
+### Security
+- Webhook signatures are verified
+- GitHub App authentication using JWT tokens
+- Installation-specific access tokens
 
-When running as an MCP server, the following tools are available:
+### Bot Commands
+Use `/jirald` followed by your request:
+- `/jirald Create a task for these bug fixes`
+- `/jirald Make a story for this new feature`
+- `/jirald Track this refactoring work`
 
-- `jira_create_issue` - Create a new JIRA issue
-- `jira_get_issue` - Get details of a specific issue
-- `jira_update_issue` - Update an existing issue
-- `jira_search_issues` - Search issues using JQL
-- `jira_add_comment` - Add a comment to an issue
-- `jira_get_transitions` - Get available status transitions
-- `jira_transition_issue` - Move an issue to a different status
+## API Endpoints
 
-## API Reference
+- `GET /` - Health check
+- `GET /health` - Service health status
+- `POST /webhook` - GitHub webhook handler
 
-### JiraClient
+## Troubleshooting
 
-#### `__init__(base_url, username, api_token)`
-Initialize the JIRA client with your instance URL and credentials.
+1. **Check server logs**: All actions are logged
+2. **Verify GitHub App permissions**: Ensure correct repository permissions
+3. **Test webhook delivery**: GitHub provides webhook delivery logs
+4. **Environment variables**: Double-check all required vars are set
+5. **Bot mention format**: Use `/jirald` not `@jirald`
 
-#### `create_issue(project_key, summary, issue_type="Task", description="", priority="Medium", **custom_fields)`
-Create a new JIRA issue.
+## Example Workflow
 
-#### `update_issue(issue_key, **fields)`
-Update an existing issue with new field values.
+1. Create a PR with your changes
+2. Add a comment: `/jirald Create a task to track these API improvements`
+3. Bot analyzes PR context and creates JIRA card
+4. Bot replies with JIRA issue details and link
 
-#### `get_issue(issue_key)`
-Retrieve detailed information about an issue.
+## Architecture
 
-#### `search_issues(jql, max_results=50, start_at=0)`
-Search for issues using JQL (JIRA Query Language).
+GitHub Webhook → PR Analysis → Bedrock → JIRA → GitHub Comment
 
-#### `add_comment(issue_key, comment)`
-Add a comment to an issue.
-
-#### `transition_issue(issue_key, transition_id)`
-Move an issue to a different status.
-
-#### `get_transitions(issue_key)`
-Get available status transitions for an issue.
-
-## Error Handling
-
-The client provides specific exception types:
-
-- `JiraAuthenticationError`: Invalid credentials
-- `JiraPermissionError`: Insufficient permissions
-- `JiraNotFoundError`: Resource not found
-- `JiraValidationError`: Invalid input data
-- `JiraError`: General API errors
-
-## Development
-
-To extend the functionality:
-
-1. Add new methods to the `JiraClient` class in `jira_client.py`
-2. Follow the existing pattern of using `_make_request()` for API calls
-3. Add appropriate error handling and logging
-4. Update this README with new functionality
-
-## Requirements
-
-- Python 3.11+
-- requests library (managed by uv)
-- python-dotenv library (managed by uv)
-- Valid JIRA instance with API access
-
-## Files
-
-### Core Components
-- `jira_client.py` - Main JIRA API client
-- `exceptions.py` - Custom exception classes
-- `mcp_server.py` - MCP server implementation
-
-### Configuration
-- `.env.example` - Environment variables template
-- `mcp_config.json` - MCP server configuration example
-- `.gitignore` - Git ignore file (includes .env)
-
-### Examples and Utilities
-- `example.py` - Direct API usage example
-- `run_mcp_server.py` - MCP server runner script
-
-## MCP Tool Examples
-
-### Create an Issue
-```json
-{
-  "name": "jira_create_issue",
-  "arguments": {
-    "project_key": "PROJ",
-    "summary": "Bug in login system",
-    "issue_type": "Bug",
-    "description": "Users cannot log in with special characters in password",
-    "priority": "High",
-    "assignee": "john.doe",
-    "labels": ["login", "security"]
-  }
-}
-```
-
-### Search Issues  
-```json
-{
-  "name": "jira_search_issues",
-  "arguments": {
-    "jql": "project = PROJ AND status = 'In Progress' ORDER BY created DESC",
-    "max_results": 10
-  }
-}
-```
-
-### Update an Issue
-```json
-{
-  "name": "jira_update_issue", 
-  "arguments": {
-    "issue_key": "PROJ-123",
-    "summary": "Updated: Bug in login system",
-    "priority": "Critical"
-  }
-}
-```
+The system uses AWS Bedrock for intelligent analysis of PR context and user requests to generate appropriate JIRA cards.
