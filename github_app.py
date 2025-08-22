@@ -71,25 +71,24 @@ class GitHubJiraBot:
     def _build_context_text(self, pr_context: Dict[str, Any], user_request: str) -> str:
         """Build context text for JIRA card creation"""
         return f"""
-PR Context:
+Work Context:
 - Title: {pr_context['title']}
-- Author: {pr_context['author']}
 - Repository: {pr_context['repository']}
-- Branch: {pr_context['branch']} → {pr_context['base_branch']}
-- Files changed: {len(pr_context['files_changed'])} files
-- Changes: +{pr_context['additions']} -{pr_context['deletions']} lines
-- URL: {pr_context['url']}
+- Files affected: {len(pr_context['files_changed'])} files
+- Scope: {pr_context['additions'] + pr_context['deletions']} lines of code
 
-PR Description:
+Description of work:
 {pr_context['description']}
 
-Files Changed:
+Files involved:
 {', '.join(pr_context['files_changed'][:10])}{'...' if len(pr_context['files_changed']) > 10 else ''}
 
-Code Changes:
-{pr_context['code_diff'][:6000] if pr_context['code_diff'] else 'No code diff available'}
+Code changes made:
+{pr_context['code_diff'][:6000] if pr_context['code_diff'] else 'No code changes available'}
 
-User Request: {user_request}
+Request: {user_request}
+
+Remember: Create a JIRA card describing what work needs to be done, as if this work hasn't been started yet. Do not reference any completed work or mention PRs.
 """
 
     async def create_jira_card_from_pr(self, pr_context: Dict[str, Any], user_request: str) -> Dict[str, Any]:
@@ -281,8 +280,8 @@ JIRA Creation Result:
             # Extract context and create JIRA card with automatic request
             pr_context = self._extract_pr_context(pr_data)
             
-            # Generate automatic request based on PR
-            auto_request = f"Create a card to track the changes in PR #{pr_number}: {pr_context['title']}"
+            # Generate automatic request without mentioning PR
+            auto_request = f"Create a card for: {pr_context['title']}"
             
             logger.info("Creating JIRA card for labeled PR")
             result = await self.create_jira_card_from_pr(pr_context, auto_request)
