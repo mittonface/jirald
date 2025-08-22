@@ -9,7 +9,7 @@ import hmac
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -126,6 +126,8 @@ Remember: Create a JIRA card describing what work needs to be done, as if this w
     
     def _build_response_context(self, user_request: str, pr_context: Dict[str, Any], jira_result: Dict[str, Any]) -> str:
         """Build context text for response generation"""
+        action = jira_result.get('action', 'create')
+        
         context_text = f"""
 User Request: {user_request}
 
@@ -135,15 +137,22 @@ PR Information:
 - Files changed: {len(pr_context['files_changed'])} files
 - Changes: +{pr_context['additions']} -{pr_context['deletions']} lines
 
-Code Changes (sample):
-{pr_context['code_diff'][:2000] if pr_context['code_diff'] else 'No code diff available'}
-
-JIRA Creation Result:
+JIRA {action.title()} Result:
 - Success: {jira_result.get('success', False)}
+- Action: {action}
 """
+        
         if jira_result.get('success'):
-            context_text += f"""- Issue Key: {jira_result['issue_key']}
-- URL: {jira_result['url']}
+            if action == 'query':
+                issues = jira_result.get('issues', [])
+                context_text += f"- Found {len(issues)} related issues:\n"
+                for issue in issues[:5]:  # Limit to first 5
+                    context_text += f"  * {issue['key']}: {issue['summary']} (Status: {issue['status']})\n"
+            else:
+                context_text += f"""- Issue Key: {jira_result['issue_key']}
+- URL: {jira_result['url']}"""
+                if action == 'create':
+                    context_text += f"""
 - Card Summary: {jira_result.get('card_summary', 'N/A')}
 - Card Description: {jira_result.get('card_description', 'N/A')}
 - Issue Type: {jira_result.get('card_issue_type', 'N/A')}"""
@@ -212,14 +221,14 @@ JIRA Creation Result:
             
             logger.info(f"Found {len(pr_data.get('changed_files', []))} changed files")
             
-            # Extract context and create JIRA card
+            # Extract context and handle JIRA request intelligently
             logger.info("Extracting PR context")
             pr_context = self._extract_pr_context(pr_data)
             
-            logger.info("Creating JIRA card")
-            result = await self.create_jira_card_from_pr(pr_context, user_request)
+            logger.info("Processing JIRA request")
+            result = await self.handle_jira_request(pr_context, user_request)
             
-            logger.info(f"JIRA card creation result: {result}")
+            logger.info(f"JIRA request result: {result}")
             
             # Generate and post response comment
             logger.info("Generating response comment")
@@ -235,6 +244,85 @@ JIRA Creation Result:
             
         except Exception as e:
             logger.error(f"Error handling PR comment: {e}", exc_info=True)
+    
+    async def handle_jira_request(self, pr_context: Dict[str, Any], user_request: str) -> Dict[str, Any]:
+        """Handle different types of JIRA requests (create, update, query)"""
+        try:
+            # First, check if this might be an update request by looking for related issues
+            repo_name = pr_context['repository']
+            pr_number = pr_context['number']
+            
+            # Find existing issues for this PR
+            existing_issues = self.jira_client.find_issues_for_pr(repo_name, pr_number)
+            
+            # Use Bedrock to determine intent and generate appropriate action
+            context_text = self._build_request_context(pr_context, user_request, existing_issues)
+            
+            # Generate response using Bedrock
+            intent_response = self.bedrock_service.analyze_jira_request(context_text)
+            
+            if intent_response.get('action') == 'update' and intent_response.get('issue_key'):
+                # Update existing issue
+                return await self._update_jira_issue(intent_response)
+            elif intent_response.get('action') == 'query':
+                # Return query results
+                return {
+                    "success": True,
+                    "action": "query",
+                    "issues": existing_issues
+                }
+            else:
+                # Create new issue (default behavior)
+                return await self.create_jira_card_from_pr(pr_context, user_request)
+                
+        except Exception as e:
+            logger.error(f"Error handling JIRA request: {e}")
+            # Fall back to creating new card
+            return await self.create_jira_card_from_pr(pr_context, user_request)
+    
+    def _build_request_context(self, pr_context: Dict[str, Any], user_request: str, existing_issues: List[Dict[str, Any]]) -> str:
+        """Build context for analyzing user intent"""
+        existing_issues_text = ""
+        if existing_issues:
+            existing_issues_text = "\nExisting related JIRA issues:\n"
+            for issue in existing_issues:
+                existing_issues_text += f"- {issue['key']}: {issue['summary']} (Status: {issue['status']})\n"
+        
+        return f"""
+Work Context:
+- Title: {pr_context['title']}
+- Repository: {pr_context['repository']}
+- PR Number: {pr_context['number']}
+- Files affected: {len(pr_context['files_changed'])} files
+
+{existing_issues_text}
+
+User Request: {user_request}
+
+Analyze the user's request and determine what they want to do:
+1. CREATE a new JIRA card
+2. UPDATE an existing JIRA card
+3. QUERY/LIST existing JIRA cards
+
+If it's an update request, specify which issue key to update and what changes to make.
+"""
+    
+    async def _update_jira_issue(self, intent_response: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing JIRA issue"""
+        issue_key = intent_response.get('issue_key')
+        updates = intent_response.get('updates', {})
+        
+        result = self.jira_client.update_issue(
+            issue_key=issue_key,
+            summary=updates.get('summary'),
+            description=updates.get('description'),
+            issue_type=updates.get('issue_type')
+        )
+        
+        if result.get('success'):
+            result['action'] = 'update'
+        
+        return result
 
     async def handle_pr_labeled(self, payload: Dict[str, Any]):
         """Handle PR labeled events for card-required label"""

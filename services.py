@@ -78,6 +78,44 @@ class BedrockService:
         
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text'].strip()
+    
+    def analyze_jira_request(self, context_text: str) -> Dict[str, Any]:
+        """Analyze user intent for JIRA operations"""
+        system_prompt = """
+You are a JIRA request analyzer. Based on the user's request and context, determine what action they want to take.
+
+Analyze the request and respond with a JSON object indicating:
+1. "action": "create", "update", or "query"
+2. If action is "update": provide "issue_key" and "updates" object with fields to change
+3. If action is "query": no additional fields needed
+
+Examples:
+- "Update MBA-123 to change the summary to 'New title'" -> {"action": "update", "issue_key": "MBA-123", "updates": {"summary": "New title"}}
+- "Show me existing cards" -> {"action": "query"}
+- "Create a new task for this bug" -> {"action": "create"}
+- "Change the description of MBA-456" -> {"action": "update", "issue_key": "MBA-456", "updates": {"description": "new description from user"}}
+
+Respond with ONLY a JSON object.
+"""
+        
+        response = self.client.invoke_model(
+            modelId=Config.BEDROCK_MODEL_ID,
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": context_text}]
+            })
+        )
+        
+        response_body = json.loads(response['body'].read())
+        ai_response = response_body['content'][0]['text'].strip()
+        
+        try:
+            return json.loads(ai_response)
+        except json.JSONDecodeError:
+            # Fall back to create if we can't parse the response
+            return {"action": "create"}
 
 
 class GitHubService:
